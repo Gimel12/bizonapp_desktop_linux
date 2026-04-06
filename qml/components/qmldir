@@ -1,0 +1,11 @@
+module components
+singleton Theme 1.0 Theme.qml
+TabButton 1.0 TabButton.qml
+NavButton 1.0 NavButton.qml
+UserMessage 1.0 UserMessage.qml
+AssistantMessage 1.0 AssistantMessage.qml
+CommandRow 1.0 CommandRow.qml
+StatusBubble 1.0 StatusBubble.qml
+ErrorBubble 1.0 ErrorBubble.qml
+UsageLine 1.0 UsageLine.qml
+PromptEditor 1.0 PromptEditor.qml
