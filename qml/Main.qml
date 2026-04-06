@@ -22,6 +22,28 @@ ApplicationWindow {
         id: chatHandler
     }
 
+    // ── App updater ───────────────────────────────────────────────────
+    AppUpdater {
+        id: appUpdater
+        onUpdateStarted: {
+            updateStatus.text = "Checking for updates..."
+            updateStatus.color = Theme.textSecondary
+            updateStatus.visible = true
+        }
+        onUpdateFinished: function(success, message) {
+            updateStatus.text = message
+            updateStatus.color = success ? Theme.success : Theme.error
+            // Auto-hide after 6 seconds
+            updateHideTimer.restart()
+        }
+    }
+
+    Timer {
+        id: updateHideTimer
+        interval: 6000
+        onTriggered: updateStatus.visible = false
+    }
+
     // ── Tab model ───────────────────────────────────────────────────────
     property int currentTab: 0
     onCurrentTabChanged: {
@@ -83,6 +105,41 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillWidth: true }
+
+                // Update button (always visible)
+                Rectangle {
+                    width: updateBtnRow.implicitWidth + 14
+                    height: 28
+                    radius: 6
+                    color: updateMouse.containsMouse ? Theme.bgTertiary : "transparent"
+                    border.color: Theme.border
+                    border.width: 1
+
+                    Row {
+                        id: updateBtnRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            text: "\u21BB"
+                            font.pixelSize: 13
+                            color: Theme.accent
+                        }
+                        Text {
+                            text: "Update"
+                            font.pixelSize: 11
+                            color: Theme.textSecondary
+                        }
+                    }
+
+                    MouseArea {
+                        id: updateMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: appUpdater.checkForUpdates()
+                    }
+                }
 
                 // Dark / Light mode toggle (always visible)
                 Rectangle {
@@ -305,6 +362,17 @@ ApplicationWindow {
                 width: parent.width
                 height: 1
                 color: Theme.border
+            }
+
+            // Update status text (overlays bottom of top bar)
+            Text {
+                id: updateStatus
+                visible: false
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 6
+                anchors.horizontalCenter: parent.horizontalCenter
+                font.pixelSize: 11
+                color: Theme.textSecondary
             }
         }
 

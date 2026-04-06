@@ -21,6 +21,7 @@ from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtCore import QUrl
 
 from backend.chat_handler import ChatHandler
+from backend.updater import AppUpdater
 
 __version__ = "2.0.0"
 
@@ -31,12 +32,13 @@ def main():
     app.setApplicationVersion(__version__)
     app.setOrganizationName("Bizon Tech")
 
-    icon_path = os.path.join(os.path.dirname(__file__), "ico.png")
+    icon_path = os.path.join(os.path.dirname(__file__), "bizon-app.png")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
     # Register Python types for QML
     qmlRegisterType(ChatHandler, "BizonBackend", 1, 0, "ChatHandler")
+    qmlRegisterType(AppUpdater, "BizonBackend", 1, 0, "AppUpdater")
 
     engine = QQmlApplicationEngine()
 
