@@ -1,55 +1,64 @@
 """
-App updater – runs `git pull` in the app directory and reports the result.
-Runs in a background thread so the UI stays responsive.
+App updater – checks for updates via git fetch, then pulls and restarts
+the app so that changed QML/Python files don't crash the running process.
 """
 
 import os
+import sys
 import subprocess
-from PySide6.QtCore import QObject, Signal, Slot, QThread
+from PySide6.QtCore import QObject, Signal, Slot, QThread, QProcess, QCoreApplication, QTimer
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MAIN_PY = os.path.join(APP_DIR, "main.py")
 
 
-class _PullWorker(QObject):
+class _UpdateWorker(QObject):
     """Worker that runs git commands in a background thread."""
-    finished = Signal(bool, str)  # success, message
+    # status: "up_to_date" | "updated" | "error"
+    finished = Signal(str, str)  # status, message
 
     def run(self):
         try:
-            # Fetch first to check if there are updates
-            subprocess.run(
+            # Fetch latest refs
+            fetch = subprocess.run(
                 ["git", "fetch", "origin"],
                 cwd=APP_DIR, capture_output=True, text=True, timeout=30
             )
-
-            # Check if we're behind
-            status = subprocess.run(
-                ["git", "status", "-uno"],
-                cwd=APP_DIR, capture_output=True, text=True, timeout=10
-            )
-
-            if "Your branch is up to date" in status.stdout:
-                self.finished.emit(True, "Already up to date.")
+            if fetch.returncode != 0:
+                self.finished.emit("error", "Fetch failed: " + (fetch.stderr.strip() or "unknown error"))
                 return
 
-            # Pull latest changes
-            result = subprocess.run(
+            # Compare local vs remote
+            local = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=APP_DIR, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+
+            remote = subprocess.run(
+                ["git", "rev-parse", "origin/main"],
+                cwd=APP_DIR, capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+
+            if local == remote:
+                self.finished.emit("up_to_date", "Already up to date.")
+                return
+
+            # There are updates — pull them
+            pull = subprocess.run(
                 ["git", "pull", "origin", "main"],
                 cwd=APP_DIR, capture_output=True, text=True, timeout=60
             )
 
-            if result.returncode == 0:
-                # Count what changed
-                lines = result.stdout.strip().split('\n')
-                self.finished.emit(True, "Update complete. Please restart the app to apply changes.")
+            if pull.returncode == 0:
+                self.finished.emit("updated", "Update downloaded. Restarting app...")
             else:
-                err = result.stderr.strip() or result.stdout.strip()
-                self.finished.emit(False, f"Update failed: {err}")
+                err = pull.stderr.strip() or pull.stdout.strip()
+                self.finished.emit("error", "Pull failed: " + err)
 
         except subprocess.TimeoutExpired:
-            self.finished.emit(False, "Update timed out. Check your internet connection.")
+            self.finished.emit("error", "Timed out. Check your internet connection.")
         except Exception as e:
-            self.finished.emit(False, f"Update error: {e}")
+            self.finished.emit("error", f"Error: {e}")
 
 
 class AppUpdater(QObject):
@@ -65,7 +74,7 @@ class AppUpdater(QObject):
 
     @Slot()
     def checkForUpdates(self):
-        """Run git pull in a background thread."""
+        """Check for updates and apply them if available."""
         if self._updating:
             return
 
@@ -73,7 +82,7 @@ class AppUpdater(QObject):
         self.updateStarted.emit()
 
         self._thread = QThread()
-        self._worker = _PullWorker()
+        self._worker = _UpdateWorker()
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)
@@ -84,8 +93,22 @@ class AppUpdater(QObject):
 
         self._thread.start()
 
-    def _on_finished(self, success, message):
+    def _on_finished(self, status, message):
         self._updating = False
         self._thread = None
         self._worker = None
-        self.updateFinished.emit(success, message)
+
+        if status == "updated":
+            # Show brief message, then restart after a short delay
+            self.updateFinished.emit(True, message)
+            QTimer.singleShot(1500, self._restart_app)
+        elif status == "up_to_date":
+            self.updateFinished.emit(True, message)
+        else:
+            self.updateFinished.emit(False, message)
+
+    def _restart_app(self):
+        """Restart the application by launching a new process and quitting."""
+        python = sys.executable
+        QProcess.startDetached(python, [MAIN_PY], APP_DIR)
+        QCoreApplication.quit()
