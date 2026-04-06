@@ -1,64 +1,13 @@
 """
-App updater – checks for updates via git fetch, then pulls and restarts
-the app so that changed QML/Python files don't crash the running process.
+App updater – uses QProcess to run git commands asynchronously.
+Checks for updates, pulls if available, and restarts the app.
 """
 
 import os
 import sys
-import subprocess
-from PySide6.QtCore import QObject, Signal, Slot, QThread, QProcess, QCoreApplication, QTimer
+from PySide6.QtCore import QObject, Signal, Slot, QProcess, QCoreApplication, QTimer
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAIN_PY = os.path.join(APP_DIR, "main.py")
-
-
-class _UpdateWorker(QObject):
-    """Worker that runs git commands in a background thread."""
-    # status: "up_to_date" | "updated" | "error"
-    finished = Signal(str, str)  # status, message
-
-    def run(self):
-        try:
-            # Fetch latest refs
-            fetch = subprocess.run(
-                ["git", "fetch", "origin"],
-                cwd=APP_DIR, capture_output=True, text=True, timeout=30
-            )
-            if fetch.returncode != 0:
-                self.finished.emit("error", "Fetch failed: " + (fetch.stderr.strip() or "unknown error"))
-                return
-
-            # Compare local vs remote
-            local = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=APP_DIR, capture_output=True, text=True, timeout=5
-            ).stdout.strip()
-
-            remote = subprocess.run(
-                ["git", "rev-parse", "origin/main"],
-                cwd=APP_DIR, capture_output=True, text=True, timeout=5
-            ).stdout.strip()
-
-            if local == remote:
-                self.finished.emit("up_to_date", "Already up to date.")
-                return
-
-            # There are updates — pull them
-            pull = subprocess.run(
-                ["git", "pull", "origin", "main"],
-                cwd=APP_DIR, capture_output=True, text=True, timeout=60
-            )
-
-            if pull.returncode == 0:
-                self.finished.emit("updated", "Update downloaded. Restarting app...")
-            else:
-                err = pull.stderr.strip() or pull.stdout.strip()
-                self.finished.emit("error", "Pull failed: " + err)
-
-        except subprocess.TimeoutExpired:
-            self.finished.emit("error", "Timed out. Check your internet connection.")
-        except Exception as e:
-            self.finished.emit("error", f"Error: {e}")
 
 
 class AppUpdater(QObject):
@@ -68,48 +17,100 @@ class AppUpdater(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._thread = None
-        self._worker = None
         self._updating = False
+        self._step = ""         # current step: fetch, local, remote, pull
+        self._proc = None
+        self._local_hash = ""
+        self._remote_hash = ""
 
     @Slot()
     def checkForUpdates(self):
         """Check for updates and apply them if available."""
         if self._updating:
             return
-
         self._updating = True
         self.updateStarted.emit()
+        self._run_fetch()
 
-        self._thread = QThread()
-        self._worker = _UpdateWorker()
-        self._worker.moveToThread(self._thread)
+    # ── Step 1: git fetch origin ───────────────────────────────────────
+    def _run_fetch(self):
+        self._step = "fetch"
+        self._proc = QProcess(self)
+        self._proc.setWorkingDirectory(APP_DIR)
+        self._proc.finished.connect(self._on_step_finished)
+        self._proc.start("git", ["fetch", "origin"])
 
-        self._thread.started.connect(self._worker.run)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
+    # ── Step 2: git rev-parse HEAD ─────────────────────────────────────
+    def _run_local_hash(self):
+        self._step = "local"
+        self._proc = QProcess(self)
+        self._proc.setWorkingDirectory(APP_DIR)
+        self._proc.finished.connect(self._on_step_finished)
+        self._proc.start("git", ["rev-parse", "HEAD"])
 
-        self._thread.start()
+    # ── Step 3: git rev-parse origin/main ──────────────────────────────
+    def _run_remote_hash(self):
+        self._step = "remote"
+        self._proc = QProcess(self)
+        self._proc.setWorkingDirectory(APP_DIR)
+        self._proc.finished.connect(self._on_step_finished)
+        self._proc.start("git", ["rev-parse", "origin/main"])
 
-    def _on_finished(self, status, message):
+    # ── Step 4: git pull origin main ───────────────────────────────────
+    def _run_pull(self):
+        self._step = "pull"
+        self._proc = QProcess(self)
+        self._proc.setWorkingDirectory(APP_DIR)
+        self._proc.finished.connect(self._on_step_finished)
+        self._proc.start("git", ["pull", "origin", "main"])
+
+    # ── Dispatcher ─────────────────────────────────────────────────────
+    def _on_step_finished(self, exitCode, exitStatus):
+        proc = self._proc
+        self._proc = None
+        if proc:
+            proc.deleteLater()
+
+        try:
+            if self._step == "fetch":
+                if exitCode != 0:
+                    self._done(False, "Fetch failed. Check your internet connection.")
+                    return
+                self._run_local_hash()
+
+            elif self._step == "local":
+                self._local_hash = bytes(proc.readAllStandardOutput()).decode().strip()
+                self._run_remote_hash()
+
+            elif self._step == "remote":
+                self._remote_hash = bytes(proc.readAllStandardOutput()).decode().strip()
+                if self._local_hash == self._remote_hash:
+                    self._done(True, "Already up to date.")
+                else:
+                    self._run_pull()
+
+            elif self._step == "pull":
+                if exitCode == 0:
+                    self._done(True, "Update complete! Restarting...")
+                    QTimer.singleShot(1500, self._restart_app)
+                    return
+                else:
+                    stderr = bytes(proc.readAllStandardError()).decode().strip()
+                    self._done(False, "Pull failed: " + (stderr or "unknown error"))
+
+        except Exception as e:
+            self._done(False, f"Error: {e}")
+
+    def _done(self, success, message):
         self._updating = False
-        self._thread = None
-        self._worker = None
-
-        if status == "updated":
-            # Show brief message, then restart after a short delay
-            self.updateFinished.emit(True, message)
-            QTimer.singleShot(1500, self._restart_app)
-        elif status == "up_to_date":
-            self.updateFinished.emit(True, message)
-        else:
-            self.updateFinished.emit(False, message)
+        self._step = ""
+        self.updateFinished.emit(success, message)
 
     def _restart_app(self):
-        """Restart the application by launching a new process and quitting."""
-        # Use bash with conda activation, same as the .desktop launcher
-        cmd = f"source /home/bizon/anaconda3/bin/activate base && cd {APP_DIR} && python3 main.py"
+        """Restart the application via bash + conda, same as the .desktop launcher."""
+        cmd = (
+            "source /home/bizon/anaconda3/bin/activate base && "
+            f"cd {APP_DIR} && python3 main.py"
+        )
         QProcess.startDetached("bash", ["-c", cmd], APP_DIR)
         QCoreApplication.quit()
