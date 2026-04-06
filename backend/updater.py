@@ -109,6 +109,7 @@ class AppUpdater(QObject):
 
     def _restart_app(self):
         """Restart the application by launching a new process and quitting."""
-        python = sys.executable
-        QProcess.startDetached(python, [MAIN_PY], APP_DIR)
+        # Use bash with conda activation, same as the .desktop launcher
+        cmd = f"source /home/bizon/anaconda3/bin/activate base && cd {APP_DIR} && python3 main.py"
+        QProcess.startDetached("bash", ["-c", cmd], APP_DIR)
         QCoreApplication.quit()
