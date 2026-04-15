@@ -209,8 +209,8 @@ class ChatHandler(QObject):
             "messages": self._messages,
             "backend": self._backend,
         }
-        # Include selected model if set
-        if self._model:
+        # Include selected model only for Ollama; Claude uses the server default
+        if self._model and self._backend == "ollama":
             body["model"] = self._model
         # Include system prompt so the API uses our managed version
         if self._system_prompt.strip():

@@ -22,6 +22,11 @@ ApplicationWindow {
         id: chatHandler
     }
 
+    // ── Eval handler ──────────────────────────────────────────────────
+    EvalHandler {
+        id: evalHandler
+    }
+
     // ── App updater ───────────────────────────────────────────────────
     AppUpdater {
         id: appUpdater
@@ -63,7 +68,8 @@ ApplicationWindow {
         { label: "Guides",      url: "https://www.notion.so/bizonbizon/Bizon-Technical-Support-Portal-a1201a84f86b4797982e06d360351f54", isChat: false },
         { label: "AI Catalog",  url: "https://catalog.ngc.nvidia.com/?filters=&orderBy=scoreDESC&query=", isChat: false },
         { label: "BizonROS",    url: "https://build.nvidia.com/explore/automotive", isChat: false },
-        { label: "Support",     url: "", isChat: true }
+        { label: "Support",     url: "", isChat: true },
+        { label: "Evaluate",    url: "", isChat: false, isEval: true }
     ]
 
     // ── Layout ──────────────────────────────────────────────────────────
@@ -381,7 +387,7 @@ ApplicationWindow {
             id: navBar
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 40 : 0
-            visible: !root.tabModel[root.currentTab].isChat
+            visible: !root.tabModel[root.currentTab].isChat && !root.tabModel[root.currentTab].isEval
             color: Theme.bgSecondary
 
             Behavior on Layout.preferredHeight {
@@ -432,7 +438,12 @@ ApplicationWindow {
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: root.tabModel[root.currentTab].isChat ? 1 : 0
+            currentIndex: {
+                var tab = root.tabModel[root.currentTab];
+                if (tab.isChat) return 1;
+                if (tab.isEval) return 2;
+                return 0;
+            }
 
             // Page 0: Browser
             BrowserView {
@@ -443,6 +454,12 @@ ApplicationWindow {
             ChatView {
                 id: chatView
                 chatHandler: chatHandler
+            }
+
+            // Page 2: Model Evaluation
+            EvalView {
+                id: evalView
+                evalHandler: evalHandler
             }
         }
     }

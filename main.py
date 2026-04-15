@@ -21,6 +21,7 @@ from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtCore import QUrl
 
 from backend.chat_handler import ChatHandler
+from backend.eval_handler import EvalHandler
 from backend.updater import AppUpdater
 
 __version__ = "2.0.0"
@@ -38,6 +39,7 @@ def main():
 
     # Register Python types for QML
     qmlRegisterType(ChatHandler, "BizonBackend", 1, 0, "ChatHandler")
+    qmlRegisterType(EvalHandler, "BizonBackend", 1, 0, "EvalHandler")
     qmlRegisterType(AppUpdater, "BizonBackend", 1, 0, "AppUpdater")
 
     engine = QQmlApplicationEngine()
