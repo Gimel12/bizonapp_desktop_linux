@@ -40,6 +40,7 @@ class ChatHandler(QObject):
     systemPromptSaved = Signal(bool, str)       # success, message
     ollamaModelsChanged = Signal()
     modelChanged = Signal()
+    sudoPasswordChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,6 +48,7 @@ class ChatHandler(QObject):
         self._busy = False
         self._backend = "ollama"
         self._model = ""
+        self._sudo_password = ""
         self._ollama_models = []
         self._buffer = ""
         self._network = QNetworkAccessManager(self)
@@ -180,6 +182,16 @@ class ChatHandler(QObject):
     def setBackend(self, value):
         self.backend = value.lower()
 
+    @Property(str, notify=sudoPasswordChanged)
+    def sudoPassword(self):
+        return self._sudo_password
+
+    @Slot(str)
+    def setSudoPassword(self, value):
+        if self._sudo_password != value:
+            self._sudo_password = value
+            self.sudoPasswordChanged.emit()
+
     # ── Public Slots ─────────────────────────────────────────────────────
 
     @Slot(str)
@@ -212,6 +224,9 @@ class ChatHandler(QObject):
         # Include selected model only for Ollama; Claude uses the server default
         if self._model and self._backend == "ollama":
             body["model"] = self._model
+        # Include sudo password for privileged command auto-elevation
+        if self._sudo_password:
+            body["sudoPassword"] = self._sudo_password
         # Include system prompt so the API uses our managed version
         if self._system_prompt.strip():
             body["systemPrompt"] = self._system_prompt

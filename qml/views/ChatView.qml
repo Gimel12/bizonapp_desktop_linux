@@ -95,6 +95,9 @@ Rectangle {
         });
     }
 
+    // ── Sudo password state ───────────────────────────────────────────
+    property bool sudoVisible: false
+
     // ── Layout ──────────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
@@ -185,6 +188,85 @@ Rectangle {
                     color: Theme.textMuted
                     opacity: parent.active ? 0.8 : 0.3
                     Behavior on opacity { NumberAnimation { duration: 200 } }
+                }
+            }
+        }
+
+        // ── Sudo password row ─────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: chatView.sudoVisible ? 40 : 0
+            visible: chatView.sudoVisible
+            color: Theme.bgSecondary
+            clip: true
+
+            Behavior on Layout.preferredHeight {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
+
+            Rectangle {
+                anchors.top: parent.top
+                width: parent.width; height: 1
+                color: Theme.border
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+                spacing: 8
+
+                Text {
+                    text: "\uD83D\uDD12"
+                    font.pixelSize: 13
+                }
+
+                Text {
+                    text: "Sudo Password"
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    color: Theme.textSecondary
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 28
+                    radius: 6
+                    color: Theme.bgInput
+                    border.color: sudoField.activeFocus ? Theme.accent : Theme.border
+                    border.width: 1
+
+                    TextInput {
+                        id: sudoField
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        verticalAlignment: TextInput.AlignVCenter
+                        font.pixelSize: 12
+                        color: Theme.textPrimary
+                        echoMode: TextInput.Password
+                        clip: true
+
+                        Text {
+                            anchors.fill: parent
+                            verticalAlignment: Text.AlignVCenter
+                            text: "Enter password to enable privileged commands..."
+                            font.pixelSize: 12
+                            color: Theme.textMuted
+                            visible: !sudoField.text && !sudoField.activeFocus
+                        }
+
+                        onTextChanged: {
+                            if (chatHandler) chatHandler.setSudoPassword(text);
+                        }
+                    }
+                }
+
+                // Status indicator
+                Text {
+                    text: sudoField.text.length > 0 ? "\u2713 Enabled" : "\u2717 Disabled"
+                    font.pixelSize: 11
+                    color: sudoField.text.length > 0 ? Theme.success : Theme.textMuted
                 }
             }
         }
@@ -280,6 +362,34 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
                         enabled: !(chatHandler && chatHandler.busy)
                         onClicked: sendAction()
+                    }
+                }
+
+                // Sudo toggle button
+                Rectangle {
+                    width: 44; height: 44
+                    radius: 12
+                    color: {
+                        if (sudoField.text.length > 0) return Qt.rgba(Theme.success.r, Theme.success.g, Theme.success.b, 0.15);
+                        return sudoToggleMouse.containsMouse ? Theme.bgTertiary : "transparent";
+                    }
+                    border.color: sudoField.text.length > 0 ? Theme.success : Theme.border
+                    border.width: 1
+
+                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: sudoField.text.length > 0 ? "\uD83D\uDD13" : "\uD83D\uDD12"
+                        font.pixelSize: 16
+                    }
+
+                    MouseArea {
+                        id: sudoToggleMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: chatView.sudoVisible = !chatView.sudoVisible
                     }
                 }
 
